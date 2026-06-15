@@ -189,3 +189,25 @@ final class SphereMathHitTests: XCTestCase {
         XCTAssertEqual(SphereMath.frontmostHit(at: .zero, in: nodes, hitRadius: 20), 0)
     }
 }
+
+final class ISphereCloudConfigurationTests: XCTestCase {
+
+    func test_defaults() {
+        let c = ISphereCloudConfiguration()
+        XCTAssertTrue(c.inertiaEnabled)
+        XCTAssertTrue(c.idleRotationEnabled)
+        XCTAssertEqual(c.idleRotationSpeed, 0.15, accuracy: 1e-9)
+        XCTAssertEqual(c.perspective, 1.0 / 1500.0, accuracy: 1e-12)
+        XCTAssertEqual(c.minScale, 0.4, accuracy: 1e-9)
+        XCTAssertEqual(c.minAlpha, 0.3, accuracy: 1e-9)
+        XCTAssertEqual(c.rotationSensitivity, 1.0, accuracy: 1e-9)
+    }
+
+    func test_isMutableValueType() {
+        var c = ISphereCloudConfiguration()
+        c.idleRotationEnabled = false
+        c.minScale = 0.6
+        XCTAssertFalse(c.idleRotationEnabled)
+        XCTAssertEqual(c.minScale, 0.6, accuracy: 1e-9)
+    }
+}
