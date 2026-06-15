@@ -277,3 +277,63 @@ final class InertiaAnimatorStepTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(UIKit)
+import UIKit
+
+final class ISphereCloudViewTests: XCTestCase {
+
+    @MainActor
+    private func makeView(_ items: [Int]) -> ISphereCloudView<Int> {
+        let v = ISphereCloudView<Int>()
+        v.frame = CGRect(x: 0, y: 0, width: 300, height: 300)
+        v.setItems(items) { _ in
+            let dot = UIView(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
+            return dot
+        }
+        v.layoutIfNeeded()
+        return v
+    }
+
+    @MainActor
+    func test_setItems_buildsOneNodePerItem() {
+        let v = makeView([1, 2, 3, 4, 5])
+        XCTAssertEqual(v.nodeViewCount, 5)
+    }
+
+    @MainActor
+    func test_emptyItems_noNodesNoCrash() {
+        let v = makeView([])
+        XCTAssertEqual(v.nodeViewCount, 0)
+    }
+
+    @MainActor
+    func test_reload_preservesNodeCount() {
+        let v = makeView([1, 2, 3])
+        v.reloadData()
+        v.layoutIfNeeded()
+        XCTAssertEqual(v.nodeViewCount, 3)
+    }
+
+    @MainActor
+    func test_hitTest_returnsItemAtNodeCenter() {
+        let v = makeView([10, 20, 30, 40, 50, 60])
+        guard let front = v.frontmostNodeForTesting() else {
+            return XCTFail("no front node")
+        }
+        XCTAssertEqual(v.itemForPointTesting(front.center), front.item)
+    }
+
+    @MainActor
+    func test_onSelect_firesForFrontmostNode() {
+        let v = makeView([10, 20, 30, 40, 50, 60])
+        var picked: Int?
+        v.onSelect = { picked = $0 }
+        guard let front = v.frontmostNodeForTesting() else {
+            return XCTFail("no front node")
+        }
+        v.selectItem(at: front.center)
+        XCTAssertEqual(picked, front.item)
+    }
+}
+#endif
