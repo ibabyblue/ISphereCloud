@@ -85,4 +85,23 @@ enum SphereMath {
                              depth: CGFloat(depth))
         }
     }
+
+    /// 命中判定：在投影结果里，找出落在 `point` 的 `hitRadius`（按节点 scale 缩放）内、
+    /// 且位于前半球（depth >= 0）的、最靠前的那个节点索引。背面节点不参与命中。
+    static func frontmostHit(at point: CGPoint,
+                             in projected: [Projected],
+                             hitRadius: CGFloat) -> Int? {
+        var best: Int?
+        var bestDepth = -CGFloat.infinity
+        for (i, p) in projected.enumerated() where p.depth >= 0 {
+            let dx = p.screenPoint.x - point.x
+            let dy = p.screenPoint.y - point.y
+            let r = hitRadius * p.scale
+            if dx * dx + dy * dy <= r * r, p.depth > bestDepth {
+                bestDepth = p.depth
+                best = i
+            }
+        }
+        return best
+    }
 }

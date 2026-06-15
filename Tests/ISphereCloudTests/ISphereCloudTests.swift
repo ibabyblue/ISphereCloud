@@ -145,3 +145,47 @@ final class SphereMathProjectionTests: XCTestCase {
                                          minScale: 0.4).isEmpty)
     }
 }
+
+final class SphereMathHitTests: XCTestCase {
+
+    private func proj(_ x: CGFloat, _ y: CGFloat, _ depth: CGFloat, _ scale: CGFloat = 1) -> SphereMath.Projected {
+        SphereMath.Projected(screenPoint: CGPoint(x: x, y: y), scale: scale, depth: depth)
+    }
+
+    func test_hit_returnsNodeWithinRadius() {
+        let nodes = [proj(0, 0, 0.5), proj(100, 100, 0.5)]
+        XCTAssertEqual(SphereMath.frontmostHit(at: CGPoint(x: 5, y: 5), in: nodes, hitRadius: 20), 0)
+    }
+
+    func test_hit_nilWhenNothingInRadius() {
+        let nodes = [proj(0, 0, 0.5), proj(100, 100, 0.5)]
+        XCTAssertNil(SphereMath.frontmostHit(at: CGPoint(x: 500, y: 500), in: nodes, hitRadius: 20))
+    }
+
+    func test_hit_prefersFrontmostAmongOverlapping() {
+        // 两个点重叠，depth 大的（更近）应胜出
+        let nodes = [proj(0, 0, -0.2), proj(0, 0, 0.9)]
+        XCTAssertEqual(SphereMath.frontmostHit(at: .zero, in: nodes, hitRadius: 20), 1)
+    }
+
+    func test_hit_excludesBackHemisphere() {
+        // 仅有一个背面节点（depth < 0），不应命中
+        let nodes = [proj(0, 0, -0.5)]
+        XCTAssertNil(SphereMath.frontmostHit(at: .zero, in: nodes, hitRadius: 20))
+    }
+
+    func test_hit_radiusScaledByNodeScale() {
+        // 距离 15，hitRadius 20。scale=0.5 → 有效半径 10，应落空。
+        let near = [proj(15, 0, 0.5, 0.5)]
+        XCTAssertNil(SphereMath.frontmostHit(at: .zero, in: near, hitRadius: 20))
+        // scale=1 → 有效半径 20，应命中。
+        let full = [proj(15, 0, 0.5, 1)]
+        XCTAssertEqual(SphereMath.frontmostHit(at: .zero, in: full, hitRadius: 20), 0)
+    }
+
+    func test_hit_equatorDepthZero_isHittable() {
+        // depth == 0（赤道）按契约属可命中（>= 0，非 > 0）。
+        let nodes = [proj(0, 0, 0)]
+        XCTAssertEqual(SphereMath.frontmostHit(at: .zero, in: nodes, hitRadius: 20), 0)
+    }
+}
