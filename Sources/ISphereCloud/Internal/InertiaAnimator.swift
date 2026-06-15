@@ -9,6 +9,19 @@
 #if canImport(UIKit)
 import UIKit
 
+/// CADisplayLink 弱引用代理：避免 link 强引用 animator。animator 释放后，
+/// 下一帧自动 invalidate，无需在 deinit 中触碰 @MainActor 状态。
+private final class DisplayLinkProxy: NSObject {
+    weak var animator: InertiaAnimator?
+    @MainActor @objc func frame(_ link: CADisplayLink) {
+        if let animator {
+            animator.onFrame(link)
+        } else {
+            link.invalidate()
+        }
+    }
+}
+
 /// 用 `CADisplayLink` 每帧回调；维护松手惯性衰减与空闲自转。
 /// 旋转增量以 `CGVector`(dx=水平→绕Y, dy=垂直→绕X) 表示，单位为"每帧的角度位移"。
 @MainActor
@@ -66,7 +79,9 @@ final class InertiaAnimator {
 
     func start() {
         guard displayLink == nil else { return }
-        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        let proxy = DisplayLinkProxy()
+        proxy.animator = self
+        let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.frame(_:)))
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
@@ -90,7 +105,7 @@ final class InertiaAnimator {
         velocity = .zero
     }
 
-    @objc private func tick(_ link: CADisplayLink) {
+    func onFrame(_ link: CADisplayLink) {
         let dt = CGFloat(link.targetTimestamp - link.timestamp)
         let result = InertiaAnimator.tickDelta(velocity: velocity,
                                                dt: dt,
