@@ -57,4 +57,32 @@ enum SphereMath {
     static func rotationMatrix(deltaX: Double, deltaY: Double, sensitivity: Double) -> simd_double3x3 {
         rotationY(deltaX * sensitivity) * rotationX(deltaY * sensitivity)
     }
+
+    /// 单个节点投影结果。
+    struct Projected {
+        let screenPoint: CGPoint  // 屏幕坐标（正交投影，含 center 偏移；不含 scale）
+        let scale: CGFloat        // [minScale, 1]，近大远小
+        let depth: CGFloat        // 相机空间 z，-1...1，越大越近
+    }
+
+    /// 把旋转后的单位球点正交投影到屏幕：位置只取 (x, y)，不含透视位移。
+    /// `scale` 仅用于节点大小/透明度（近大远小）；真正的透视由视图层以 CATransform3D.m34 体现，
+    /// 因此此处不把 scale 乘进屏幕坐标，避免透视被叠加两次。
+    static func project(points: [SIMD3<Double>],
+                        rotation: simd_double3x3,
+                        radius: Double,
+                        center: CGPoint,
+                        minScale: Double) -> [Projected] {
+        points.map { p in
+            let r = rotation * p
+            let depth = r.z                       // -1 (远) .. 1 (近)
+            let t = (depth + 1.0) / 2.0           // 0 (远) .. 1 (近)
+            let scale = minScale + (1.0 - minScale) * t
+            let sx = center.x + CGFloat(r.x * radius)
+            let sy = center.y - CGFloat(r.y * radius)   // 翻转 y 到屏幕坐标（正交投影）
+            return Projected(screenPoint: CGPoint(x: sx, y: sy),
+                             scale: CGFloat(scale),
+                             depth: CGFloat(depth))
+        }
+    }
 }

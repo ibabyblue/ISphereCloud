@@ -89,3 +89,59 @@ final class SphereMathRotationTests: XCTestCase {
         XCTAssertEqual(simd_length(r - SIMD3(0, 0, 1)), 0, accuracy: 1e-9)
     }
 }
+
+final class SphereMathProjectionTests: XCTestCase {
+
+    func test_project_returnsOnePerPoint() {
+        let pts = SphereMath.fibonacciSphere(count: 30)
+        let proj = SphereMath.project(points: pts,
+                                      rotation: matrix_identity_double3x3,
+                                      radius: 100,
+                                      center: CGPoint(x: 50, y: 50),
+                                      minScale: 0.4)
+        XCTAssertEqual(proj.count, 30)
+    }
+
+    func test_project_nearerDepthHasLargerScale() {
+        // 前极点 (0,0,1) 最近，后极点 (0,0,-1) 最远
+        let pts: [SIMD3<Double>] = [SIMD3(0, 0, 1), SIMD3(0, 0, -1)]
+        let proj = SphereMath.project(points: pts,
+                                      rotation: matrix_identity_double3x3,
+                                      radius: 100,
+                                      center: .zero,
+                                      minScale: 0.4)
+        XCTAssertGreaterThan(proj[0].scale, proj[1].scale)
+        XCTAssertEqual(proj[0].depth, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(proj[1].depth, -1.0, accuracy: 1e-9)
+    }
+
+    func test_project_scaleWithinBounds() {
+        for p in SphereMath.project(points: SphereMath.fibonacciSphere(count: 100),
+                                    rotation: SphereMath.rotationMatrix(deltaX: 0.5, deltaY: 0.3, sensitivity: 1),
+                                    radius: 120,
+                                    center: CGPoint(x: 60, y: 60),
+                                    minScale: 0.4) {
+            XCTAssertGreaterThanOrEqual(p.scale, 0.4)
+            XCTAssertLessThanOrEqual(p.scale, 1.0)
+        }
+    }
+
+    func test_project_centersAtProvidedCenter() {
+        // y 轴在屏幕上翻转：(0,1,0) 应落在 center 上方（更小的 y）
+        let proj = SphereMath.project(points: [SIMD3(0, 1, 0)],
+                                      rotation: matrix_identity_double3x3,
+                                      radius: 100,
+                                      center: CGPoint(x: 200, y: 200),
+                                      minScale: 0.4)
+        XCTAssertEqual(proj[0].screenPoint.x, 200, accuracy: 1e-6)
+        XCTAssertLessThan(proj[0].screenPoint.y, 200)
+    }
+
+    func test_project_emptyPoints_returnsEmpty() {
+        XCTAssertTrue(SphereMath.project(points: [],
+                                         rotation: matrix_identity_double3x3,
+                                         radius: 100,
+                                         center: .zero,
+                                         minScale: 0.4).isEmpty)
+    }
+}
