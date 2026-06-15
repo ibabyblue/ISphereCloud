@@ -30,4 +30,31 @@ enum SphereMath {
         }
         return points
     }
+
+    /// 绕 X 轴旋转矩阵（列主序，与 simd 一致）。
+    static func rotationX(_ a: Double) -> simd_double3x3 {
+        let c = cos(a), s = sin(a)
+        return simd_double3x3(columns: (
+            SIMD3(1, 0, 0),
+            SIMD3(0, c, s),
+            SIMD3(0, -s, c)
+        ))
+    }
+
+    /// 绕 Y 轴旋转矩阵（列主序，与 simd 一致）。
+    static func rotationY(_ a: Double) -> simd_double3x3 {
+        let c = cos(a), s = sin(a)
+        return simd_double3x3(columns: (
+            SIMD3(c, 0, -s),
+            SIMD3(0, 1, 0),
+            SIMD3(s, 0, c)
+        ))
+    }
+
+    /// 把一次拖拽位移映射为增量旋转：水平位移绕 Y 轴、垂直位移绕 X 轴。
+    /// 由于结果为 `Ry * Rx`，应用时先绕 X 后绕 Y。
+    /// 返回值用于左乘累积旋转矩阵：`accumulated = rotationMatrix(...) * accumulated`。
+    static func rotationMatrix(deltaX: Double, deltaY: Double, sensitivity: Double) -> simd_double3x3 {
+        rotationY(deltaX * sensitivity) * rotationX(deltaY * sensitivity)
+    }
 }
