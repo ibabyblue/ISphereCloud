@@ -211,3 +211,69 @@ final class ISphereCloudConfigurationTests: XCTestCase {
         XCTAssertEqual(c.minScale, 0.6, accuracy: 1e-9)
     }
 }
+
+#if canImport(UIKit)
+import UIKit
+
+final class InertiaAnimatorStepTests: XCTestCase {
+
+    func test_step_decaysVelocityByFriction() {
+        let v = CGVector(dx: 10, dy: -4)
+        let next = InertiaAnimator.step(velocity: v, friction: 0.9)
+        XCTAssertEqual(next.dx, 9.0, accuracy: 1e-9)
+        XCTAssertEqual(next.dy, -3.6, accuracy: 1e-9)
+    }
+
+    func test_step_stallsToZeroBelowThreshold() {
+        let v = CGVector(dx: 0.0005, dy: -0.0005)
+        let next = InertiaAnimator.step(velocity: v, friction: 0.9)
+        XCTAssertEqual(next.dx, 0)
+        XCTAssertEqual(next.dy, 0)
+    }
+
+    func test_isStalled_detectsNearZero() {
+        XCTAssertTrue(InertiaAnimator.isStalled(CGVector(dx: 0.0001, dy: 0)))
+        XCTAssertFalse(InertiaAnimator.isStalled(CGVector(dx: 1, dy: 0)))
+    }
+
+    func test_step_decaysButDoesNotStallAboveThreshold() {
+        // 0.002 * 0.92 = 0.00184，仍高于阈值 0.001，不应被归零
+        let next = InertiaAnimator.step(velocity: CGVector(dx: 0.002, dy: 0), friction: 0.92)
+        XCTAssertEqual(next.dx, 0.00184, accuracy: 1e-9)
+        XCTAssertEqual(next.dy, 0)
+    }
+
+    func test_tickDelta_interacting_freezesEverything() {
+        let r = InertiaAnimator.tickDelta(velocity: CGVector(dx: 5, dy: 0),
+                                          dt: 1.0 / 60, idleSpeed: 0.15,
+                                          idleEnabled: true, isInteracting: true)
+        XCTAssertNil(r.delta)
+        XCTAssertEqual(r.newVelocity.dx, 0)
+        XCTAssertEqual(r.newVelocity.dy, 0)
+    }
+
+    func test_tickDelta_inertia_emitsVelocityAndDecays() {
+        let r = InertiaAnimator.tickDelta(velocity: CGVector(dx: 5, dy: -2),
+                                          dt: 1.0 / 60, idleSpeed: 0.15,
+                                          idleEnabled: true, isInteracting: false)
+        XCTAssertEqual(r.delta?.dx, 5)
+        XCTAssertEqual(r.delta?.dy, -2)
+        XCTAssertEqual(r.newVelocity.dx, 5 * 0.92, accuracy: 1e-9)
+        XCTAssertEqual(r.newVelocity.dy, -2 * 0.92, accuracy: 1e-9)
+    }
+
+    func test_tickDelta_stalledIdleEnabled_emitsIdleSpin() {
+        let r = InertiaAnimator.tickDelta(velocity: .zero, dt: 0.5, idleSpeed: 0.15,
+                                          idleEnabled: true, isInteracting: false)
+        let delta = try! XCTUnwrap(r.delta)
+        XCTAssertEqual(delta.dx, 0.15 * 0.5, accuracy: 1e-9)
+        XCTAssertEqual(delta.dy, 0)
+    }
+
+    func test_tickDelta_stalledIdleDisabled_emitsNothing() {
+        let r = InertiaAnimator.tickDelta(velocity: .zero, dt: 0.5, idleSpeed: 0.15,
+                                          idleEnabled: false, isInteracting: false)
+        XCTAssertNil(r.delta)
+    }
+}
+#endif
