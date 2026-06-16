@@ -120,7 +120,7 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
     private var collapseFromCenters: [CGPoint] = []
     private var collapseFromScales: [CGFloat] = []
     private var collapseFromAlphas: [CGFloat] = []
-    private var collapseDepths: [CGFloat] = []
+    private var collapseFromDepths: [CGFloat] = []
 
     private func commonInit() {
         backgroundColor = .clear
@@ -199,13 +199,18 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
                            minScale: Double(configuration.minScale))
     }
 
+    /// 由 depth(-1...1) 计算节点透明度，与 layoutNodes 的稳态渲染一致。
+    private func alpha(forDepth depth: CGFloat) -> CGFloat {
+        let t = (depth + 1) / 2
+        return configuration.minAlpha + (1 - configuration.minAlpha) * t
+    }
+
     private func layoutNodes() {
         guard !nodeViews.isEmpty else { return }
         let proj = currentProjection()
         for (i, node) in nodeViews.enumerated() where i < proj.count {
             let p = proj[i]
-            let t = (p.depth + 1) / 2     // 0 远 .. 1 近
-            let alpha = configuration.minAlpha + (1 - configuration.minAlpha) * t
+            let alpha = alpha(forDepth: p.depth)
             node.apply(center: p.screenPoint,
                        scale: p.scale,
                        alpha: alpha,
@@ -270,6 +275,7 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
         refreshAnimator.stop()
         let hadNodes = !nodeViews.isEmpty
         guard refreshReady else {
+            // 离屏/未就绪时的 reload 跳过收缩，直接重建并挂起首帧弹出（即使存在旧节点）。
             // 尚未就绪：建好新节点并停在球心，待 didMoveToWindow/layoutSubviews 再弹出
             rebuildNodes()
             pendingRefreshAnimation = true
@@ -302,14 +308,11 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
     // MARK: Collapse
 
     private func startCollapse() {
-        let proj = currentProjection()
-        collapseFromCenters = proj.map { $0.screenPoint }
-        collapseFromScales = proj.map { $0.scale }
-        collapseDepths = proj.map { $0.depth }
-        collapseFromAlphas = proj.map { p in
-            let t = (p.depth + 1) / 2
-            return configuration.minAlpha + (1 - configuration.minAlpha) * t
-        }
+        // 从节点"当前渲染态"快照，使动画进行中再次刷新也能从可见位置平滑收缩
+        collapseFromCenters = nodeViews.map { $0.center }
+        collapseFromScales = nodeViews.map { CGFloat($0.layer.transform.m11) }
+        collapseFromAlphas = nodeViews.map { $0.alpha }
+        collapseFromDepths = nodeViews.map { CGFloat($0.layer.zPosition) }
         refreshPhase = .collapsing
         applyCollapseFrame(elapsed: 0)
         refreshAnimator.start(duration: configuration.refreshCollapseDuration)
@@ -324,7 +327,7 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
                        scale: collapseFromScales[i] * (1 - q),
                        alpha: collapseFromAlphas[i] * (1 - q),
                        perspective: configuration.perspective,
-                       depth: collapseDepths[i])
+                       depth: collapseFromDepths[i])
         }
     }
 
@@ -335,10 +338,7 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
         targetCenters = proj.map { $0.screenPoint }
         targetScales = proj.map { $0.scale }
         targetDepths = proj.map { $0.depth }
-        targetAlphas = proj.map { p in
-            let t = (p.depth + 1) / 2
-            return configuration.minAlpha + (1 - configuration.minAlpha) * t
-        }
+        targetAlphas = proj.map { alpha(forDepth: $0.depth) }
     }
 
     private func startExpand() {
