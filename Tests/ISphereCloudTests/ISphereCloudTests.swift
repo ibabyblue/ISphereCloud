@@ -201,6 +201,10 @@ final class ISphereCloudConfigurationTests: XCTestCase {
         XCTAssertEqual(c.minScale, 0.4, accuracy: 1e-9)
         XCTAssertEqual(c.minAlpha, 0.3, accuracy: 1e-9)
         XCTAssertEqual(c.rotationSensitivity, 1.0, accuracy: 1e-9)
+        XCTAssertFalse(c.refreshAnimationEnabled)
+        XCTAssertEqual(c.refreshNodeDuration, 0.45, accuracy: 1e-9)
+        XCTAssertEqual(c.refreshStaggerWindow, 0.35, accuracy: 1e-9)
+        XCTAssertEqual(c.refreshCollapseDuration, 0.22, accuracy: 1e-9)
     }
 
     func test_isMutableValueType() {
