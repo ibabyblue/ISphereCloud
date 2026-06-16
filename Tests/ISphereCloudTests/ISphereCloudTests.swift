@@ -375,6 +375,56 @@ final class ISphereCloudViewTests: XCTestCase {
     }
 
     @MainActor
+    private func makeAnimatedView(_ items: [Int]) -> ISphereCloudView<Int> {
+        var config = ISphereCloudConfiguration()
+        config.refreshAnimationEnabled = true
+        let v = ISphereCloudView<Int>(configuration: config)
+        v.frame = CGRect(x: 0, y: 0, width: 300, height: 300)
+        let window = UIWindow(frame: v.frame)
+        window.addSubview(v)
+        window.makeKeyAndVisible()
+        v.setItems(items) { _ in UIView(frame: CGRect(x: 0, y: 0, width: 40, height: 40)) }
+        v.layoutIfNeeded()
+        return v
+    }
+
+    @MainActor
+    func test_animatedFirstLoad_isRefreshingThenSettles() {
+        let v = makeAnimatedView([1, 2, 3, 4, 5])
+        XCTAssertTrue(v.isRefreshingForTesting)
+        v.driveRefreshToEndForTesting()
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 5)
+    }
+
+    @MainActor
+    func test_animatedReload_preservesCountAfterCollapseExpand() {
+        let v = makeAnimatedView([1, 2, 3])
+        v.driveRefreshToEndForTesting()
+        v.reloadData()
+        XCTAssertTrue(v.isRefreshingForTesting)
+        v.driveRefreshToEndForTesting()
+        XCTAssertEqual(v.nodeViewCount, 3)
+    }
+
+    @MainActor
+    func test_animatedTerminalState_hitTestStillWorks() {
+        let v = makeAnimatedView([10, 20, 30, 40, 50, 60])
+        v.driveRefreshToEndForTesting()
+        guard let front = v.frontmostNodeForTesting() else {
+            return XCTFail("no front node")
+        }
+        XCTAssertEqual(v.itemForPointTesting(front.center), front.item)
+    }
+
+    @MainActor
+    func test_animationDisabled_buildsImmediatelyNoRefreshState() {
+        let v = makeView([1, 2, 3])
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 3)
+    }
+
+    @MainActor
     func test_setItems_buildsOneNodePerItem() {
         let v = makeView([1, 2, 3, 4, 5])
         XCTAssertEqual(v.nodeViewCount, 5)
