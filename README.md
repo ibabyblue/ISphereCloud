@@ -21,6 +21,9 @@ Inspired by the Soul app's "people-matching planet" screen.
 - **Generic + closure-rendered nodes** — `ISphereCloudView<Item>`; you return a `UIView` per item and
   load any images yourself (the package does no networking).
 - **Front-facing hit testing** — taps select the front-most node under the finger; back-facing nodes are ignored.
+- **Refresh animation (optional)** — opt in via `refreshAnimationEnabled`; nodes burst from the sphere
+  center to their surface positions with a randomly-staggered ease-out. When data already exists they
+  first collapse back to the center, then expand. Off by default.
 
 ## Requirements
 
@@ -38,7 +41,7 @@ In Xcode choose **File → Add Package Dependencies**, enter the repository URL,
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/ibabyblue/ISphereCloud", from: "0.0.1")
+    .package(url: "https://github.com/ibabyblue/ISphereCloud", from: "0.1.0")
 ],
 targets: [
     .target(name: "YourTarget", dependencies: [
@@ -76,6 +79,24 @@ config.perspective         = 1.0 / 1500  // CATransform3D.m34 magnitude
 config.rotationSensitivity = 1.0
 let sphere = ISphereCloudView<SoulUser>(configuration: config)
 ```
+
+### Refresh Animation
+
+Enable it on the configuration; once on, every `setItems` / `reloadData` plays the burst:
+
+```swift
+var config = ISphereCloudConfiguration()
+config.refreshAnimationEnabled = true     // off by default
+config.refreshNodeDuration     = 0.45     // per-node flight time (s)
+config.refreshStaggerWindow    = 0.35     // each node starts at a random offset in [0, window] (s)
+config.refreshCollapseDuration = 0.22     // collapse-to-center time when old data exists (s)
+let sphere = ISphereCloudView<SoulUser>(configuration: config)
+```
+
+- **First load** (no existing nodes): nodes pop straight out from the center.
+- **Reload** (data already present): old nodes collapse to the center, then the new data expands out.
+- Rotation is frozen for the duration of the animation and resumes automatically when it settles.
+- If the view isn't on screen yet when you set data, the burst is deferred and plays once it appears.
 
 ## API Reference
 
