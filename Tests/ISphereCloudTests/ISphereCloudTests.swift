@@ -190,6 +190,81 @@ final class SphereMathHitTests: XCTestCase {
     }
 }
 
+final class RefreshMathTests: XCTestCase {
+
+    func test_clamp01_clampsBothEnds() {
+        XCTAssertEqual(RefreshMath.clamp01(-0.5), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.clamp01(0.3), 0.3, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.clamp01(1.7), 1, accuracy: 1e-9)
+    }
+
+    func test_easeOut_endpoints() {
+        XCTAssertEqual(RefreshMath.easeOut(0), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.easeOut(1), 1, accuracy: 1e-9)
+    }
+
+    func test_easeOut_clampsAndIsMonotonic() {
+        XCTAssertEqual(RefreshMath.easeOut(-1), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.easeOut(2), 1, accuracy: 1e-9)
+        XCTAssertGreaterThan(RefreshMath.easeOut(0.6), RefreshMath.easeOut(0.3))
+    }
+
+    func test_easeOut_decelerates() {
+        let first = RefreshMath.easeOut(0.5) - RefreshMath.easeOut(0)
+        let second = RefreshMath.easeOut(1) - RefreshMath.easeOut(0.5)
+        XCTAssertGreaterThan(first, second)
+    }
+
+    func test_easeIn_endpoints() {
+        XCTAssertEqual(RefreshMath.easeIn(0), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.easeIn(1), 1, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_beforeStart_isZero() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.1, startOffset: 0.3, duration: 0.4), 0, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_atStart_isZero() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.3, startOffset: 0.3, duration: 0.4), 0, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_atEnd_isOne() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.7, startOffset: 0.3, duration: 0.4), 1, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_pastEnd_clampsToOne() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 10, startOffset: 0.3, duration: 0.4), 1, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_midway_isHalf() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.5, startOffset: 0.3, duration: 0.4), 0.5, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_zeroDuration_stepsAtOffset() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.2, startOffset: 0.3, duration: 0), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.3, startOffset: 0.3, duration: 0), 1, accuracy: 1e-9)
+    }
+
+    func test_randomStartOffsets_countAndRange() {
+        var seq: [CGFloat] = [0, 0.5, 0.999]
+        var i = 0
+        let offsets = RefreshMath.randomStartOffsets(count: 3, window: 0.4) {
+            defer { i += 1 }
+            return seq[i]
+        }
+        XCTAssertEqual(offsets.count, 3)
+        for o in offsets {
+            XCTAssertGreaterThanOrEqual(o, 0)
+            XCTAssertLessThanOrEqual(o, 0.4)
+        }
+        XCTAssertEqual(offsets[1], 0.2, accuracy: 1e-9)
+    }
+
+    func test_randomStartOffsets_zeroCount_isEmpty() {
+        XCTAssertTrue(RefreshMath.randomStartOffsets(count: 0, window: 0.4) { 0 }.isEmpty)
+    }
+}
+
 final class ISphereCloudConfigurationTests: XCTestCase {
 
     func test_defaults() {
