@@ -246,7 +246,7 @@ final class RefreshMathTests: XCTestCase {
     }
 
     func test_randomStartOffsets_countAndRange() {
-        var seq: [CGFloat] = [0, 0.5, 0.999]
+        let seq: [CGFloat] = [0, 0.5, 0.999]
         var i = 0
         let offsets = RefreshMath.randomStartOffsets(count: 3, window: 0.4) {
             defer { i += 1 }
