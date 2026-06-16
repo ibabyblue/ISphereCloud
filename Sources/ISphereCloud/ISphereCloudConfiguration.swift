@@ -25,6 +25,14 @@ public struct ISphereCloudConfiguration {
     public var minAlpha: CGFloat = 0.3
     /// 拖拽位移到旋转角度的灵敏度系数。
     public var rotationSensitivity: CGFloat = 1.0
+    /// 数据变更（setItems / reloadData）时播放"球心弹出"刷新动画。默认关闭，向后兼容。
+    public var refreshAnimationEnabled: Bool = false
+    /// 单个节点从球心飞到球面的时长（秒）。
+    public var refreshNodeDuration: CGFloat = 0.45
+    /// 错峰窗口：各节点起跳时刻在 [0, window] 内随机分布（秒）。
+    public var refreshStaggerWindow: CGFloat = 0.35
+    /// 有旧数据时，旧节点整体收缩回球心的时长（秒）。
+    public var refreshCollapseDuration: CGFloat = 0.22
 
     public init() {}
 }

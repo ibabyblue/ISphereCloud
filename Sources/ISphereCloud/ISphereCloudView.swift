@@ -46,12 +46,20 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
     public func setItems(_ items: [Item], cellProvider: @escaping (Item) -> UIView) {
         self.items = items
         self.cellProvider = cellProvider
-        rebuildNodes()
+        if configuration.refreshAnimationEnabled {
+            runRefreshAnimation()
+        } else {
+            rebuildNodes()
+        }
     }
 
     /// 重新运行 cellProvider 重建节点，保留当前旋转姿态。
     public func reloadData() {
-        rebuildNodes()
+        if configuration.refreshAnimationEnabled {
+            runRefreshAnimation()
+        } else {
+            rebuildNodes()
+        }
     }
 
     public func startIdleRotation() { animator.start() }
@@ -95,6 +103,25 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
 
     private var hitRadius: CGFloat = 30
 
+    private enum RefreshPhase { case idle, collapsing, expanding }
+    private var refreshPhase: RefreshPhase = .idle
+    private let refreshAnimator = RefreshAnimator()
+    /// 视图尚未就绪（无 window/bounds）时设置数据：挂起首帧弹出，待就绪再播放。
+    private var pendingRefreshAnimation = false
+
+    // expand 目标（与 nodeViews 同序）
+    private var targetCenters: [CGPoint] = []
+    private var targetScales: [CGFloat] = []
+    private var targetAlphas: [CGFloat] = []
+    private var targetDepths: [CGFloat] = []
+    private var startOffsets: [CGFloat] = []
+
+    // collapse 起始快照（与旧 nodeViews 同序）
+    private var collapseFromCenters: [CGPoint] = []
+    private var collapseFromScales: [CGFloat] = []
+    private var collapseFromAlphas: [CGFloat] = []
+    private var collapseFromDepths: [CGFloat] = []
+
     private func commonInit() {
         backgroundColor = .clear
 
@@ -111,13 +138,31 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
         animator.idleRotationEnabled = configuration.idleRotationEnabled
         animator.idleRotationSpeed = configuration.idleRotationSpeed
         animator.onTick = { [weak self] delta in
-            self?.applyRotationDelta(delta)
+            guard let self, self.refreshPhase == .idle else { return }  // 刷新期间冻结旋转
+            self.applyRotationDelta(delta)
+        }
+        refreshAnimator.onProgress = { [weak self] elapsed in
+            self?.handleRefreshFrame(elapsed: elapsed)
+        }
+        refreshAnimator.onComplete = { [weak self] in
+            self?.handleRefreshComplete()
         }
     }
 
     public override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { animator.start() } else { animator.stop() }
+        if window != nil {
+            animator.start()
+            if pendingRefreshAnimation { playPendingExpandIfReady() }
+        } else {
+            animator.stop()
+            // 离开 window 时若刷新动画在进行中：停掉 display link，回到 window 时重放弹出
+            if refreshPhase != .idle {
+                refreshAnimator.stop()
+                refreshPhase = .idle
+                pendingRefreshAnimation = true
+            }
+        }
     }
 
     private func rebuildNodes() {
@@ -137,6 +182,15 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
+        if refreshPhase != .idle {
+            // 动画进行中尺寸变化：重捕获目标，动画继续（球心在帧应用内实时取）
+            if refreshPhase == .expanding { captureExpandTargets() }
+            return
+        }
+        if pendingRefreshAnimation {
+            playPendingExpandIfReady()
+            return
+        }
         layoutNodes()
     }
 
@@ -151,13 +205,18 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
                            minScale: Double(configuration.minScale))
     }
 
+    /// 由 depth(-1...1) 计算节点透明度，与 layoutNodes 的稳态渲染一致。
+    private func alpha(forDepth depth: CGFloat) -> CGFloat {
+        let t = (depth + 1) / 2
+        return configuration.minAlpha + (1 - configuration.minAlpha) * t
+    }
+
     private func layoutNodes() {
         guard !nodeViews.isEmpty else { return }
         let proj = currentProjection()
         for (i, node) in nodeViews.enumerated() where i < proj.count {
             let p = proj[i]
-            let t = (p.depth + 1) / 2     // 0 远 .. 1 近
-            let alpha = configuration.minAlpha + (1 - configuration.minAlpha) * t
+            let alpha = alpha(forDepth: p.depth)
             node.apply(center: p.screenPoint,
                        scale: p.scale,
                        alpha: alpha,
@@ -203,6 +262,163 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
         if let item = itemForPointTesting(point) {
             onSelect?(item)
         }
+    }
+
+    // MARK: Refresh Animation
+
+    /// 视图是否已就绪到可播放动画（在 window 上且有有效尺寸）。
+    private var refreshReady: Bool {
+        window != nil && bounds.width > 0 && bounds.height > 0
+    }
+
+    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a + (b - a) * t }
+    private func lerp(_ a: CGPoint, _ b: CGPoint, _ t: CGFloat) -> CGPoint {
+        CGPoint(x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t))
+    }
+
+    /// 统一入口：按"是否有旧节点 / 视图是否就绪"决定 collapse→expand、直接 expand 或挂起。
+    private func runRefreshAnimation() {
+        refreshAnimator.stop()
+        let hadNodes = !nodeViews.isEmpty
+        guard refreshReady else {
+            // 离屏/未就绪时的 reload 跳过收缩，直接重建并挂起首帧弹出（即使存在旧节点）。
+            // 尚未就绪：建好新节点并停在球心，待 didMoveToWindow/layoutSubviews 再弹出
+            rebuildNodes()
+            pendingRefreshAnimation = true
+            parkNodesAtCenter()
+            return
+        }
+        if hadNodes {
+            startCollapse()
+        } else {
+            rebuildNodes()
+            startExpand()
+        }
+    }
+
+    /// 把所有节点摆到球心、scale 0、alpha 0（挂起期间不闪现终态）。
+    private func parkNodesAtCenter() {
+        let center = sphereCenter
+        for node in nodeViews {
+            node.apply(center: center, scale: 0, alpha: 0,
+                       perspective: configuration.perspective, depth: 0)
+        }
+    }
+
+    private func playPendingExpandIfReady() {
+        guard refreshReady else { return }
+        pendingRefreshAnimation = false
+        startExpand()
+    }
+
+    // MARK: Collapse
+
+    private func startCollapse() {
+        // 从节点"当前渲染态"快照，使动画进行中再次刷新也能从可见位置平滑收缩
+        collapseFromCenters = nodeViews.map { $0.center }
+        collapseFromScales = nodeViews.map { CGFloat($0.layer.transform.m11) }
+        collapseFromAlphas = nodeViews.map { $0.alpha }
+        collapseFromDepths = nodeViews.map { CGFloat($0.layer.zPosition) }
+        refreshPhase = .collapsing
+        applyCollapseFrame(elapsed: 0)
+        refreshAnimator.start(duration: configuration.refreshCollapseDuration)
+    }
+
+    private func applyCollapseFrame(elapsed: CGFloat) {
+        let d = configuration.refreshCollapseDuration
+        let q = RefreshMath.easeIn(d > 0 ? elapsed / d : 1)
+        let center = sphereCenter
+        for (i, node) in nodeViews.enumerated() where i < collapseFromCenters.count {
+            node.apply(center: lerp(collapseFromCenters[i], center, q),
+                       scale: collapseFromScales[i] * (1 - q),
+                       alpha: collapseFromAlphas[i] * (1 - q),
+                       perspective: configuration.perspective,
+                       depth: collapseFromDepths[i])
+        }
+    }
+
+    // MARK: Expand
+
+    private func captureExpandTargets() {
+        let proj = currentProjection()
+        targetCenters = proj.map { $0.screenPoint }
+        targetScales = proj.map { $0.scale }
+        targetDepths = proj.map { $0.depth }
+        targetAlphas = proj.map { alpha(forDepth: $0.depth) }
+    }
+
+    private func startExpand() {
+        captureExpandTargets()
+        startOffsets = RefreshMath.randomStartOffsets(count: nodeViews.count,
+                                                      window: configuration.refreshStaggerWindow) {
+            CGFloat.random(in: 0..<1)
+        }
+        refreshPhase = .expanding
+        applyExpandFrame(elapsed: 0)   // 初始：球心、scale 0、alpha 0
+        let total = configuration.refreshStaggerWindow + configuration.refreshNodeDuration
+        refreshAnimator.start(duration: total)
+    }
+
+    private func applyExpandFrame(elapsed: CGFloat) {
+        let center = sphereCenter
+        for (i, node) in nodeViews.enumerated()
+        where i < targetCenters.count && i < startOffsets.count {
+            let raw = RefreshMath.nodeProgress(elapsed: elapsed,
+                                               startOffset: startOffsets[i],
+                                               duration: configuration.refreshNodeDuration)
+            let p = RefreshMath.easeOut(raw)
+            node.apply(center: lerp(center, targetCenters[i], p),
+                       scale: targetScales[i] * p,
+                       alpha: targetAlphas[i] * p,
+                       perspective: configuration.perspective,
+                       depth: targetDepths[i])
+        }
+    }
+
+    // MARK: Driver callbacks
+
+    private func handleRefreshFrame(elapsed: CGFloat) {
+        switch refreshPhase {
+        case .collapsing: applyCollapseFrame(elapsed: elapsed)
+        case .expanding:  applyExpandFrame(elapsed: elapsed)
+        case .idle:       break
+        }
+    }
+
+    private func handleRefreshComplete() {
+        switch refreshPhase {
+        case .collapsing:
+            // 收缩完成 → 重建新节点 → 弹出（同一调用栈内完成，不渲染中间帧）
+            rebuildNodes()
+            startExpand()
+        case .expanding:
+            refreshPhase = .idle
+            layoutNodes()   // 落到精确终态；之后旋转重新接管
+        case .idle:
+            break
+        }
+    }
+
+    // MARK: Testing hooks
+
+    var isRefreshingForTesting: Bool { refreshPhase != .idle }
+
+    /// 同步把刷新动画推进到终态（测试用，跳过 CADisplayLink 时序）。
+    func driveRefreshToEndForTesting() {
+        while refreshPhase != .idle {
+            switch refreshPhase {
+            case .collapsing:
+                applyCollapseFrame(elapsed: configuration.refreshCollapseDuration)
+                handleRefreshComplete()   // → expanding
+            case .expanding:
+                let total = configuration.refreshStaggerWindow + configuration.refreshNodeDuration
+                applyExpandFrame(elapsed: total)
+                handleRefreshComplete()   // → idle
+            case .idle:
+                break
+            }
+        }
+        refreshAnimator.stop()
     }
 }
 #endif

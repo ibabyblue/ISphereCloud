@@ -16,7 +16,11 @@ struct DemoUser: Hashable {
 
 final class ViewController: UIViewController {
 
-    private let sphere = ISphereCloudView<DemoUser>()
+    private let sphere: ISphereCloudView<DemoUser> = {
+        var config = ISphereCloudConfiguration()
+        config.refreshAnimationEnabled = true
+        return ISphereCloudView<DemoUser>(configuration: config)
+    }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -45,5 +49,21 @@ final class ViewController: UIViewController {
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             self?.present(alert, animated: true)
         }
+
+        let refreshButton = UIButton(type: .system)
+        refreshButton.setTitle("刷新", for: .normal)
+        refreshButton.setTitleColor(.white, for: .normal)
+        refreshButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        refreshButton.translatesAutoresizingMaskIntoConstraints = false
+        refreshButton.addTarget(self, action: #selector(didTapRefresh), for: .touchUpInside)
+        view.addSubview(refreshButton)
+        NSLayoutConstraint.activate([
+            refreshButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            refreshButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+        ])
+    }
+
+    @objc private func didTapRefresh() {
+        sphere.reloadData()
     }
 }

@@ -190,6 +190,81 @@ final class SphereMathHitTests: XCTestCase {
     }
 }
 
+final class RefreshMathTests: XCTestCase {
+
+    func test_clamp01_clampsBothEnds() {
+        XCTAssertEqual(RefreshMath.clamp01(-0.5), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.clamp01(0.3), 0.3, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.clamp01(1.7), 1, accuracy: 1e-9)
+    }
+
+    func test_easeOut_endpoints() {
+        XCTAssertEqual(RefreshMath.easeOut(0), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.easeOut(1), 1, accuracy: 1e-9)
+    }
+
+    func test_easeOut_clampsAndIsMonotonic() {
+        XCTAssertEqual(RefreshMath.easeOut(-1), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.easeOut(2), 1, accuracy: 1e-9)
+        XCTAssertGreaterThan(RefreshMath.easeOut(0.6), RefreshMath.easeOut(0.3))
+    }
+
+    func test_easeOut_decelerates() {
+        let first = RefreshMath.easeOut(0.5) - RefreshMath.easeOut(0)
+        let second = RefreshMath.easeOut(1) - RefreshMath.easeOut(0.5)
+        XCTAssertGreaterThan(first, second)
+    }
+
+    func test_easeIn_endpoints() {
+        XCTAssertEqual(RefreshMath.easeIn(0), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.easeIn(1), 1, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_beforeStart_isZero() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.1, startOffset: 0.3, duration: 0.4), 0, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_atStart_isZero() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.3, startOffset: 0.3, duration: 0.4), 0, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_atEnd_isOne() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.7, startOffset: 0.3, duration: 0.4), 1, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_pastEnd_clampsToOne() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 10, startOffset: 0.3, duration: 0.4), 1, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_midway_isHalf() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.5, startOffset: 0.3, duration: 0.4), 0.5, accuracy: 1e-9)
+    }
+
+    func test_nodeProgress_zeroDuration_stepsAtOffset() {
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.2, startOffset: 0.3, duration: 0), 0, accuracy: 1e-9)
+        XCTAssertEqual(RefreshMath.nodeProgress(elapsed: 0.3, startOffset: 0.3, duration: 0), 1, accuracy: 1e-9)
+    }
+
+    func test_randomStartOffsets_countAndRange() {
+        let seq: [CGFloat] = [0, 0.5, 0.999]
+        var i = 0
+        let offsets = RefreshMath.randomStartOffsets(count: 3, window: 0.4) {
+            defer { i += 1 }
+            return seq[i]
+        }
+        XCTAssertEqual(offsets.count, 3)
+        for o in offsets {
+            XCTAssertGreaterThanOrEqual(o, 0)
+            XCTAssertLessThanOrEqual(o, 0.4)
+        }
+        XCTAssertEqual(offsets[1], 0.2, accuracy: 1e-9)
+    }
+
+    func test_randomStartOffsets_zeroCount_isEmpty() {
+        XCTAssertTrue(RefreshMath.randomStartOffsets(count: 0, window: 0.4) { 0 }.isEmpty)
+    }
+}
+
 final class ISphereCloudConfigurationTests: XCTestCase {
 
     func test_defaults() {
@@ -201,6 +276,10 @@ final class ISphereCloudConfigurationTests: XCTestCase {
         XCTAssertEqual(c.minScale, 0.4, accuracy: 1e-9)
         XCTAssertEqual(c.minAlpha, 0.3, accuracy: 1e-9)
         XCTAssertEqual(c.rotationSensitivity, 1.0, accuracy: 1e-9)
+        XCTAssertFalse(c.refreshAnimationEnabled)
+        XCTAssertEqual(c.refreshNodeDuration, 0.45, accuracy: 1e-9)
+        XCTAssertEqual(c.refreshStaggerWindow, 0.35, accuracy: 1e-9)
+        XCTAssertEqual(c.refreshCollapseDuration, 0.22, accuracy: 1e-9)
     }
 
     func test_isMutableValueType() {
@@ -293,6 +372,76 @@ final class ISphereCloudViewTests: XCTestCase {
         }
         v.layoutIfNeeded()
         return v
+    }
+
+    @MainActor
+    private func makeAnimatedView(_ items: [Int]) -> ISphereCloudView<Int> {
+        var config = ISphereCloudConfiguration()
+        config.refreshAnimationEnabled = true
+        let v = ISphereCloudView<Int>(configuration: config)
+        v.frame = CGRect(x: 0, y: 0, width: 300, height: 300)
+        let window = UIWindow(frame: v.frame)
+        window.addSubview(v)
+        window.makeKeyAndVisible()
+        v.setItems(items) { _ in UIView(frame: CGRect(x: 0, y: 0, width: 40, height: 40)) }
+        v.layoutIfNeeded()
+        return v
+    }
+
+    @MainActor
+    func test_animatedFirstLoad_isRefreshingThenSettles() {
+        let v = makeAnimatedView([1, 2, 3, 4, 5])
+        XCTAssertTrue(v.isRefreshingForTesting)
+        v.driveRefreshToEndForTesting()
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 5)
+    }
+
+    @MainActor
+    func test_animatedPendingPath_playsOnEnteringWindow() {
+        var config = ISphereCloudConfiguration()
+        config.refreshAnimationEnabled = true
+        let v = ISphereCloudView<Int>(configuration: config)
+        v.frame = CGRect(x: 0, y: 0, width: 300, height: 300)
+        // 在加入 window 之前设置数据：应挂起，不进入动画态
+        v.setItems([1, 2, 3, 4]) { _ in UIView(frame: CGRect(x: 0, y: 0, width: 40, height: 40)) }
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 4)
+        // 进入 window：挂起的弹出应开始播放
+        let window = UIWindow(frame: v.frame)
+        window.addSubview(v)
+        window.makeKeyAndVisible()
+        XCTAssertTrue(v.isRefreshingForTesting)
+        v.driveRefreshToEndForTesting()
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 4)
+    }
+
+    @MainActor
+    func test_animatedReload_preservesCountAfterCollapseExpand() {
+        let v = makeAnimatedView([1, 2, 3])
+        v.driveRefreshToEndForTesting()
+        v.reloadData()
+        XCTAssertTrue(v.isRefreshingForTesting)
+        v.driveRefreshToEndForTesting()
+        XCTAssertEqual(v.nodeViewCount, 3)
+    }
+
+    @MainActor
+    func test_animatedTerminalState_hitTestStillWorks() {
+        let v = makeAnimatedView([10, 20, 30, 40, 50, 60])
+        v.driveRefreshToEndForTesting()
+        guard let front = v.frontmostNodeForTesting() else {
+            return XCTFail("no front node")
+        }
+        XCTAssertEqual(v.itemForPointTesting(front.center), front.item)
+    }
+
+    @MainActor
+    func test_animationDisabled_buildsImmediatelyNoRefreshState() {
+        let v = makeView([1, 2, 3])
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 3)
     }
 
     @MainActor
