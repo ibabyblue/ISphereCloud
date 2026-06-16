@@ -156,6 +156,12 @@ public final class ISphereCloudView<Item: Hashable>: UIView {
             if pendingRefreshAnimation { playPendingExpandIfReady() }
         } else {
             animator.stop()
+            // 离开 window 时若刷新动画在进行中：停掉 display link，回到 window 时重放弹出
+            if refreshPhase != .idle {
+                refreshAnimator.stop()
+                refreshPhase = .idle
+                pendingRefreshAnimation = true
+            }
         }
     }
 

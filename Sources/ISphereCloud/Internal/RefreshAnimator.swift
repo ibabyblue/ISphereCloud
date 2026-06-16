@@ -37,8 +37,6 @@ final class RefreshAnimator {
     private var elapsed: CGFloat = 0
     private var isActive = false
 
-    var running: Bool { isActive }
-
     /// 启动一段时长 `duration` 秒的动画。duration <= 0 时立即完成（progress(0) + complete）。
     func start(duration: CGFloat) {
         stop()

@@ -398,6 +398,26 @@ final class ISphereCloudViewTests: XCTestCase {
     }
 
     @MainActor
+    func test_animatedPendingPath_playsOnEnteringWindow() {
+        var config = ISphereCloudConfiguration()
+        config.refreshAnimationEnabled = true
+        let v = ISphereCloudView<Int>(configuration: config)
+        v.frame = CGRect(x: 0, y: 0, width: 300, height: 300)
+        // 在加入 window 之前设置数据：应挂起，不进入动画态
+        v.setItems([1, 2, 3, 4]) { _ in UIView(frame: CGRect(x: 0, y: 0, width: 40, height: 40)) }
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 4)
+        // 进入 window：挂起的弹出应开始播放
+        let window = UIWindow(frame: v.frame)
+        window.addSubview(v)
+        window.makeKeyAndVisible()
+        XCTAssertTrue(v.isRefreshingForTesting)
+        v.driveRefreshToEndForTesting()
+        XCTAssertFalse(v.isRefreshingForTesting)
+        XCTAssertEqual(v.nodeViewCount, 4)
+    }
+
+    @MainActor
     func test_animatedReload_preservesCountAfterCollapseExpand() {
         let v = makeAnimatedView([1, 2, 3])
         v.driveRefreshToEndForTesting()
